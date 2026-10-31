@@ -18,4 +18,6 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Esedékes levelek kiküldése
-        run: curl -fsS --max-time 120 "https://isucode.hu/api/index.php?r=outreach/tick" || true
+        run: |
+          out=$(curl -sS --max-time 120 -w ' [HTTP %{http_code}]' "https://isucode.hu/api/index.php?r=outreach/tick" 2>&1 || true)
+          echo "::notice::Válasz: ${out:0:300}"
