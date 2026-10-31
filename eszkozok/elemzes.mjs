@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import tls from 'node:tls';
+import dns from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -183,6 +184,8 @@ async function analyze(website) {
   ]);
   out.http = { status: page.status, finalUrl: page.url ?? null, error: page.error ?? null, server: page.headers?.server ?? null };
   out.https = { ssl, httpRedirectsToHttps: /^https:/i.test(httpRedirect.location || '') };
+  // Fogad-e levelet a domain (MX rekord)? Ha nincs, az ezen a domainen lévő e-mail-cím visszapattanna.
+  out.mx = await dns.resolveMx(domain).then((r) => r.map((x) => x.exchange).slice(0, 3), () => []);
   out.robotsTxt = robots.status === 200 && !/<html/i.test(robots.text || '');
   out.sitemapXml = sitemap.status === 200;
   if (page.text) {
