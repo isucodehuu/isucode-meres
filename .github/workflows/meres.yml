@@ -1,0 +1,93 @@
+# Weboldalak mérése. A jelölt weboldalak listája a jeloltek/ÉÉÉÉ-HH-NN-*.json fájlba kerül; ez a munkafolyamat
+# 6 gépen párhuzamosan lemér mindent (Lighthouse mobil + asztali, képernyőképek, SSL, SEO-alapok), és az
+# eredményt az elemzes/ mappába visszateszi. Nyilvános tároló, így a GitHub nem számolja a perceket.
+name: Weboldalak mérése
+
+on:
+  push:
+    branches: [main]
+    paths: ['jeloltek/*.json']
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'Jelölt-fájl (pl. jeloltek/2026-11-01-a1.json)'
+        required: true
+
+concurrency:
+  group: meres-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.p.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: p
+        env:
+          BEFORE: ${{ github.event.before }}
+          INPUT_FILE: ${{ inputs.file }}
+        run: |
+          if [ -n "$INPUT_FILE" ]; then files="$INPUT_FILE";
+          elif [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -qE '^0+$' && git cat-file -e "$BEFORE" 2>/dev/null; then
+            files=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- 'jeloltek/*.json' | tr '\n' ' ')
+          else files=$(ls jeloltek/*.json | sort | tail -n 1); fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+  measure:
+    needs: pick
+    if: needs.pick.outputs.files != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g lighthouse@12 --silent
+      - name: Mérés
+        run: |
+          for f in ${{ needs.pick.outputs.files }}; do
+            day=$(basename "$f" .json | cut -c1-10)
+            node eszkozok/elemzes.mjs "$f" "out/elemzes/$day" "${{ matrix.shard }}/6"
+          done
+          mkdir -p out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: elemzes-${{ matrix.shard }}
+          path: out
+          if-no-files-found: ignore
+          retention-days: 3
+
+  save:
+    needs: measure
+    if: always() && needs.measure.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: elemzes-*
+          merge-multiple: true
+          path: out
+      - name: Eredmények visszatöltése
+        run: |
+          [ -d out/elemzes ] || exit 0
+          cp -r out/elemzes .
+          git config user.name "isucode-elemzes"
+          git config user.email "isucode-elemzes@users.noreply.github.com"
+          git add elemzes
+          git diff --cached --quiet && exit 0
+          git commit -qm "Elemzés: $(git diff --cached --name-only | grep -c '\.json$') oldal"
+          for i in 1 2 3 4 5; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done
+          exit 1

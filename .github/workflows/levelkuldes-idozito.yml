@@ -1,0 +1,21 @@
+name: Levélküldés időzítő
+
+# Minden nap napközben 10 percenként szól az isucode.hu szerverének, hogy küldje ki az esedékes, az adminban
+# már JÓVÁHAGYOTT leveleket. A szerver maga dönti el, mennyi esedékes: 9 és 16 óra között egyenletesen
+# elosztja a napi keretet, más időben nem küld semmit, és csak a jóváhagyott leveleket tudja kiküldeni.
+# (Az órák UTC-ben vannak, így téli és nyári időszámításnál is lefedik a 9–16 órát.)
+
+on:
+  schedule:
+    - cron: '*/10 7-14 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Esedékes levelek kiküldése
+        run: curl -fsS --max-time 120 "https://isucode.hu/api/index.php?r=outreach/tick" || true
