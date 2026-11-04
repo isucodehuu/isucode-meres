@@ -137,6 +137,18 @@ function pageText(html) {
     .replace(/[ \t\u00a0]+/g, ' ').replace(/\n\s*/g, '\n').replace(/\n{2,}/g, '\n').trim();
 }
 
+// A weboldalon nyilvánosan szereplő e-mail-címek (mailto-linkek és a szövegben lévők). A levél címzettje csak
+// ezek közül kerülhet ki, így a feladatnak nem kell külön lekérnie az oldalt, és nem talál ki címet.
+function extractEmails(html) {
+  const src = html
+    .replace(/&#64;|&#x40;|\[at\]|\(at\)|\s+\[kukac\]\s+|\s*\(kukac\)\s*/gi, '@')
+    .replace(/&#46;|&#x2e;|\[dot\]|\(dot\)|\[pont\]|\(pont\)/gi, '.');
+  const out = new Set();
+  for (const m of src.matchAll(/mailto:([^"'?>\s]+)/gi)) out.add(decodeURIComponent(m[1]).trim().toLowerCase());
+  for (const m of src.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) out.add(m[0].toLowerCase());
+  return [...out].filter((e) => /^[^@\s]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e) && !/\.(png|jpe?g|gif|webp|svg|css|js)$/.test(e) && !/(sentry|wixpress|example\.|domain\.|email\.com|yourmail|sajat@)/.test(e));
+}
+
 function internalLinks(html, base) {
   const out = new Map();
   for (const m of html.matchAll(/<a\b[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
@@ -154,12 +166,18 @@ function internalLinks(html, base) {
 async function crawl(html, base) {
   const links = internalLinks(html, base);
   // A fontos aloldalak szövege (kapcsolat, szolgáltatások, árak, rólunk, referenciák), legfeljebb 4.
-  const want = /kapcsolat|elerhet|contact|szolgalt|arak|arlista|rolunk|bemutatk|referenc|galeri|munkaink|foglal|idopont/i;
-  const pick = links.filter((l) => want.test(l.url + ' ' + l.label.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))).slice(0, 4);
+  const norm = (l) => l.url + ' ' + l.label.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const contactRe = /kapcsolat|elerhet|contact|impresszum|imprint|ceginfo|adatok/i;
+  const want = /szolgalt|arak|arlista|rolunk|bemutatk|referenc|galeri|munkaink|foglal|idopont/i;
+  // először a kapcsolat/impresszum oldalak (itt van az e-mail-cím), utána a többi fontos aloldal
+  const pick = [...links.filter((l) => contactRe.test(norm(l))).slice(0, 2), ...links.filter((l) => !contactRe.test(norm(l)) && want.test(norm(l))).slice(0, 3)];
   const pages = [];
+  const emails = [];
   for (const l of pick) {
     const r = await get(l.url);
-    if (r.text) pages.push({ url: l.url, label: l.label, status: r.status, text: pageText(r.text).slice(0, 5000) });
+    if (!r.text) continue;
+    pages.push({ url: l.url, label: l.label, status: r.status, text: pageText(r.text).slice(0, 5000) });
+    for (const e of extractEmails(r.text)) emails.push({ email: e, source: l.url });
   }
   // Nem működő belső linkek (legfeljebb 30 ellenőrzése).
   const broken = [];
@@ -167,7 +185,7 @@ async function crawl(html, base) {
     const r = await get(l.url, { body: false });
     if (r.status === 0 || r.status >= 400) broken.push({ url: l.url, label: l.label, status: r.status || r.error });
   }));
-  return { menu: links.slice(0, 40), pages, broken };
+  return { menu: links.slice(0, 40), pages, broken, subEmails: emails };
 }
 
 async function analyze(website) {
@@ -191,10 +209,23 @@ async function analyze(website) {
   if (page.text) {
     out.html = htmlChecks(page.text, page.url || url);
     out.text = pageText(page.text).slice(0, 8000);
+    const found = extractEmails(page.text).map((e) => ({ email: e, source: page.url || url }));
     try {
-      Object.assign(out, await crawl(page.text, page.url || url));
+      const c = await crawl(page.text, page.url || url);
+      found.push(...c.subEmails);
+      delete c.subEmails;
+      Object.assign(out, c);
     } catch (e) {
       out.crawlError = String(e.message || e);
+    }
+    // a weboldalon talált e-mail-címek (címenként az első forrás), és hogy a cím domainje fogad-e levelet
+    const seen = new Map();
+    for (const f of found) if (!seen.has(f.email)) seen.set(f.email, f.source);
+    out.emails = [];
+    for (const [email, source] of [...seen].slice(0, 8)) {
+      const d = email.split('@')[1];
+      const mx = d === domain ? out.mx ?? null : await dns.resolveMx(d).then((r) => r.length > 0, () => false);
+      out.emails.push({ email, source, sameDomain: d === domain || d.endsWith('.' + domain), acceptsMail: Array.isArray(mx) ? mx.length > 0 : mx });
     }
   }
   const target = page.url || url;
