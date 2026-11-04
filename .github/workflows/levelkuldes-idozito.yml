@@ -1,13 +1,13 @@
 name: Levélküldés időzítő
 
-# Minden nap napközben 10 percenként szól az isucode.hu szerverének, hogy küldje ki az esedékes, az adminban
+# Minden nap reggel 6 és este 10 között (budapesti idő) 10 percenként szól az isucode.hu szerverének: küldje ki az esedékes, az adminban
 # már JÓVÁHAGYOTT leveleket. A szerver maga dönti el, mennyi esedékes: 9 és 16 óra között egyenletesen
 # elosztja a napi keretet, más időben nem küld semmit, és csak a jóváhagyott leveleket tudja kiküldeni.
-# (Az órák UTC-ben vannak, így téli és nyári időszámításnál is lefedik a 9–16 órát.)
+# (Az órák UTC-ben vannak.) Közben a szerver a postafiókot is letölti, így egy új válaszról azonnal szól a telefonra.
 
 on:
   schedule:
-    - cron: '*/10 7-14 * * *'
+    - cron: '*/10 5-20 * * *'
   workflow_dispatch:
 
 permissions: {}
