@@ -7,4 +7,4 @@ Weboldal-mérő az IsuCode (isucode.hu) számára.
   képernyőképek, HTTPS, alap SEO-elemek), és az eredményt az `elemzes/ÉÉÉÉ-HH-NN/` mappába teszi.
 - A **Levélküldés időzítő** napközben szól az isucode.hu szerverének, hogy küldje ki az adminban már jóváhagyott leveleket.
 
-Csak nyilvános weboldalak mérési adatai vannak itt; levelek, e-mail-címek és jelszavak nem.
+Csak nyilvános weboldalak címei és képernyőképei vannak itt olvasható formában; a mérési adatok (oldalszöveg, kapcsolati adatok) titkosítva (`.json.enc`), levelek és jelszavak nincsenek.

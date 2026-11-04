@@ -1,0 +1,54 @@
+name: Elérhetőség-figyelő
+
+# Kétóránként megnézi, hogy él-e az oldal és az API, és hogy nem jár-e le hamarosan a HTTPS-tanúsítvány.
+# Ha valami nem stimmel, a futás pirosra vált (erről a GitHub e-mailt küld), és ha be van állítva az
+# NTFY_TOPIC titok, a telefonra is jön értesítés. (Nyilvános tárolóban fut, így nem számolja a GitHub a perceket.)
+
+on:
+  schedule:
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ellenőrzés
+        id: check
+        run: |
+          fail=""
+          try() { # 3 próbálkozás, hogy egy pillanatnyi akadás ne riasszon
+            for i in 1 2 3; do
+              if eval "$1"; then return 0; fi
+              sleep 20
+            done
+            return 1
+          }
+          try 'curl -fsS --max-time 20 https://isucode.hu/ | grep -q "IsuCode"' || fail="$fail Főoldal nem tölt be."
+          try 'curl -fsS --max-time 20 "https://isucode.hu/api/index.php?r=content" | grep -q "\"packages\""' || fail="$fail Az API nem válaszol."
+          try 'curl -fsS --max-time 20 -o /dev/null https://isucode.hu/sitemap.xml' || fail="$fail A sitemap.xml nem érhető el."
+          end=$(echo | openssl s_client -servername isucode.hu -connect isucode.hu:443 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2)
+          if [ -n "$end" ]; then
+            days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+            echo "A tanúsítvány még $days napig érvényes."
+            [ "$days" -lt 10 ] && fail="$fail A HTTPS-tanúsítvány $days nap múlva lejár."
+          else
+            fail="$fail A HTTPS-tanúsítvány nem olvasható."
+          fi
+          echo "fail=$fail" >> "$GITHUB_OUTPUT"
+          if [ -n "$fail" ]; then echo "::error::$fail"; else echo "Minden rendben."; fi
+
+      - name: Értesítés a telefonra
+        if: steps.check.outputs.fail != ''
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          MSG: ${{ steps.check.outputs.fail }}
+        run: |
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -fsS -H "Title: isucode.hu: hiba" -H "Priority: high" -H "Tags: warning" -d "$MSG" "https://ntfy.sh/$NTFY_TOPIC" || true
+          fi
+          exit 1
