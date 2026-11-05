@@ -14,7 +14,7 @@ on:
         required: true
 
 concurrency:
-  group: meres-${{ github.sha }}
+  group: meres-${{ github.sha }}-${{ inputs.file }}
   cancel-in-progress: false
 
 permissions:
