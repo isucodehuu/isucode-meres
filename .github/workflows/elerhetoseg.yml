@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   check:
@@ -52,3 +53,11 @@ jobs:
             curl -fsS -H "Title: isucode.hu: hiba" -H "Priority: high" -H "Tags: warning" -d "$MSG" "https://ntfy.sh/$NTFY_TOPIC" || true
           fi
           exit 1
+      - name: Mérési sor ellenőrzése (tartalék út)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          w=$(curl -sS --max-time 30 "https://isucode.hu/api/index.php?r=measure/queue&peek=1" | python3 -c "import json,sys;print(json.load(sys.stdin).get('waiting',0))" 2>/dev/null || echo 0)
+          echo "Várakozó mérési listák: $w"
+          if [ "$w" -gt 0 ]; then gh workflow run meresi-sor.yml -R "$GITHUB_REPOSITORY" && echo "Mérési sor elindítva"; fi

@@ -7,10 +7,11 @@ name: Levélküldés időzítő
 
 on:
   schedule:
-    - cron: '*/10 5-20 * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  actions: write
 
 jobs:
   tick:
@@ -21,3 +22,10 @@ jobs:
         run: |
           out=$(curl -sS --max-time 120 -w ' [HTTP %{http_code}]' "https://isucode.hu/api/index.php?r=outreach/tick" 2>&1 || true)
           echo "::notice::Válasz: ${out:0:300}"
+      - name: Mérési sor ellenőrzése (tartalék út)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          w=$(curl -sS --max-time 30 "https://isucode.hu/api/index.php?r=measure/queue&peek=1" | python3 -c "import json,sys;print(json.load(sys.stdin).get('waiting',0))" 2>/dev/null || echo 0)
+          echo "Várakozó mérési listák: $w"
+          if [ "$w" -gt 0 ]; then gh workflow run meresi-sor.yml -R "$GITHUB_REPOSITORY" && echo "Mérési sor elindítva"; fi
