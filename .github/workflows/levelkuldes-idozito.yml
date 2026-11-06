@@ -1,9 +1,12 @@
 name: Levélküldés időzítő
 
-# Minden nap reggel 6 és este 10 között (budapesti idő) 10 percenként szól az isucode.hu szerverének: küldje ki az esedékes, az adminban
-# már JÓVÁHAGYOTT leveleket. A szerver maga dönti el, mennyi esedékes: 9 és 16 óra között egyenletesen
-# elosztja a napi keretet, más időben nem küld semmit, és csak a jóváhagyott leveleket tudja kiküldeni.
-# (Az órák UTC-ben vannak.) Közben a szerver a postafiókot is letölti, így egy új válaszról azonnal szól a telefonra.
+# Szól az isucode.hu szerverének: küldje ki az esedékes, az adminban már JÓVÁHAGYOTT leveleket. A szerver maga
+# dönti el, mennyi esedékes (9 és 16 óra között egyenletesen elosztja a napi keretet, utána még 2 óráig pótolja a
+# lemaradást), és csak a jóváhagyott leveleket tudja kiküldeni.
+# A GitHub az ütemezett futásokat gyakran csak óránként indítja el (hiába kérünk 10 percenkéntit), ezért a küldési
+# időszakban egy futás nem áll le az első hívás után: kb. 50 percig 4 percenként újra szól. Így egy óránkénti
+# indítás is folyamatos küldést ad. (Nyilvános tárolóban fut, a GitHub nem számolja a perceket.)
+# Közben a szerver a postafiókot is letölti, így egy új válaszról azonnal szól a telefonra.
 
 on:
   schedule:
@@ -13,15 +16,15 @@ on:
 permissions:
   actions: write
 
+concurrency:
+  group: levelkuldes
+  cancel-in-progress: false
+
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 58
     steps:
-      - name: Esedékes levelek kiküldése
-        run: |
-          out=$(curl -sS --max-time 120 -w ' [HTTP %{http_code}]' "https://isucode.hu/api/index.php?r=outreach/tick" 2>&1 || true)
-          echo "::notice::Válasz: ${out:0:300}"
       - name: Mérési sor ellenőrzése (tartalék út)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -29,3 +32,18 @@ jobs:
           w=$(curl -sS --max-time 30 "https://isucode.hu/api/index.php?r=measure/queue&peek=1" | python3 -c "import json,sys;print(json.load(sys.stdin).get('waiting',0))" 2>/dev/null || echo 0)
           echo "Várakozó mérési listák: $w"
           if [ "$w" -gt 0 ]; then gh workflow run meresi-sor.yml -R "$GITHUB_REPOSITORY" && echo "Mérési sor elindítva"; fi
+      - name: Esedékes levelek kiküldése
+        run: |
+          start=$(date +%s)
+          total=0
+          while :; do
+            out=$(curl -sS --max-time 150 -w ' [HTTP %{http_code}]' "https://isucode.hu/api/index.php?r=outreach/tick" 2>&1 || true)
+            echo "$(TZ=Europe/Budapest date +%H:%M) ${out:0:200}"
+            n=$(echo "$out" | grep -o '"sent":[0-9]*' | cut -d: -f2)
+            total=$((total + ${n:-0}))
+            # ha épp nincs küldési időszak, nem kell tovább várni
+            echo "$out" | grep -q '"next":"most"' || break
+            [ $(( $(date +%s) - start )) -gt 2880 ] && break
+            sleep 240
+          done
+          echo "::notice::Ebben a futásban kiküldve: $total levél"
