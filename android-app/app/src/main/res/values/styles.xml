@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#080D10</color>
+    <color name="card">#E6111827</color>
+    <color name="brand">#4FD1C5</color>
+    <style name="Theme.IsuCode" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorAccent">@color/brand</item>
+    </style>
+</resources>

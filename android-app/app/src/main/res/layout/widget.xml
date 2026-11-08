@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="IsuCode"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#66FFFFFF"
+            android:textSize="11sp" />
+        <ImageView
+            android:id="@+id/refresh"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="4dp"
+            android:padding="5dp"
+            android:contentDescription="Frissítés"
+            android:src="@android:drawable/ic_popup_sync"
+            android:tint="#99FFFFFF" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:minHeight="52dp"
+        android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/tile1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+            <TextView
+                android:id="@+id/n1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#FBBF24"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="teendő"
+                android:maxLines="1"
+                android:textColor="#99FFFFFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/tile2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+            <TextView
+                android:id="@+id/n2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#34D399"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="új válasz"
+                android:maxLines="1"
+                android:textColor="#99FFFFFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/tile3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+            <TextView
+                android:id="@+id/n3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#4FD1C5"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="jóváhagyásra"
+                android:maxLines="1"
+                android:textColor="#99FFFFFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/tile4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="0dp"
+            android:background="@drawable/tile_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="4dp">
+            <TextView
+                android:id="@+id/n4"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ma kiment"
+                android:maxLines="1"
+                android:textColor="#99FFFFFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/names"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:text="Nyisd meg az appot, és lépj be egyszer."
+        android:textColor="#B3FFFFFF"
+        android:textSize="12sp" />
+</LinearLayout>
