@@ -151,6 +151,7 @@ class MainActivity : AppCompatActivity() {
             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         IsuWidget.schedule(this)
+        Updater.check(this)
     }
 
     private fun startUrl(i: Intent?): String {
@@ -179,6 +180,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         // ha az ujjlenyomat be van kapcsolva, 3 perc háttér után zárolja magát
+        if (stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt > 60 * 60 * 1000L) Updater.check(this)
         if (stoppedAt > 0 && Vault.hasLogin(this) && SystemClock.elapsedRealtime() - stoppedAt > LOCK_AFTER_MS) {
             lock.visibility = View.VISIBLE
             appUnlock()
@@ -275,6 +277,12 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun deviceName(): String = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".take(60)
+
+        @JavascriptInterface
+        fun checkUpdate() = runOnUiThread { Updater.check(this@MainActivity, true) }
+
+        @JavascriptInterface
+        fun version(): String = BuildConfigCompat.version(this@MainActivity)
 
         @JavascriptInterface
         fun clear() {

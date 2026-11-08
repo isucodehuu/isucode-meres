@@ -115,6 +115,18 @@ class IsuWidget : AppWidgetProvider() {
             }
         }
 
+        /** Egyszer szól, ha új app-verzió jelent meg (az app megnyitásakor felajánlja a frissítést). */
+        fun notifyUpdate(c: Context) {
+            val l = Updater.latest() ?: return
+            val code = l.optLong("code")
+            val p = Vault.prefs(c)
+            if (code <= Updater.ownCode(c) || p.getLong("updNotified", 0) == code) return
+            p.edit().putLong("updNotified", code).apply()
+            val nm = c.getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "Új válaszok és teendők", NotificationManager.IMPORTANCE_HIGH))
+            show(c, 102, "Új IsuCode app verzió (${l.optString("version")})", "Nyisd meg az appot, és nyomd meg a Frissítést.", "#/")
+        }
+
         private fun show(c: Context, id: Int, title: String, text: String, hash: String) {
             val n = NotificationCompat.Builder(c, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
@@ -157,6 +169,7 @@ class SummaryWorker(private val c: Context, p: WorkerParameters) : Worker(c, p) 
             Vault.prefs(c).edit().putString("last", d.toString()).apply()
             IsuWidget.render(c, d)
             IsuWidget.notifyChanges(c, d)
+            IsuWidget.notifyUpdate(c)
             Result.success()
         } catch (e: Exception) {
             Result.retry()
