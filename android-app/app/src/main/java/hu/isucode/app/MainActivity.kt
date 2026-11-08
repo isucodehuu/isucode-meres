@@ -100,7 +100,12 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                pageHost = url?.let { Uri.parse(it).host }
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
+                pageHost = url?.let { Uri.parse(it).host }
                 CookieManager.getInstance().flush()
             }
         }
@@ -256,9 +261,14 @@ class MainActivity : AppCompatActivity() {
         prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
     }
 
+    /** A híd csak az isucode.hu oldalain válaszol. */
+    @Volatile private var pageHost: String? = null
+
     inner class Bridge {
+        private fun ok() = pageHost == HOST
+
         @JavascriptInterface
-        fun hasLogin(): Boolean = Vault.hasLogin(this@MainActivity)
+        fun hasLogin(): Boolean = ok() && Vault.hasLogin(this@MainActivity)
 
         @JavascriptInterface
         fun deviceId(): String = Vault.deviceId(this@MainActivity)
@@ -274,6 +284,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun enroll(loginToken: String, widgetToken: String, deviceId: String) = runOnUiThread {
+            if (!ok()) return@runOnUiThread
             try {
                 withFingerprint("Ujjlenyomatos belépés bekapcsolása", "Érintsd meg az ujjlenyomat-olvasót", Vault.encryptCipher()) { c ->
                     Vault.save(this@MainActivity, c, loginToken, widgetToken, deviceId)
@@ -287,6 +298,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun unlock() = runOnUiThread {
+            if (!ok()) return@runOnUiThread
             val cipher = try {
                 Vault.decryptCipher(this@MainActivity)
             } catch (e: KeyPermanentlyInvalidatedException) {
@@ -301,9 +313,40 @@ class MainActivity : AppCompatActivity() {
                 return@runOnUiThread
             }
             withFingerprint("Belépés az IsuCode adminba", "Érintsd meg az ujjlenyomat-olvasót", cipher) { c ->
+                // A belépő tokent a weboldal kódja SOHA nem kapja meg: az app maga kér vele munkamenetet,
+                // és csak a munkamenet-sütit adja át a WebView-nak.
                 val t = Vault.read(this@MainActivity, c)
-                js("window.__isuApp&&window.__isuApp.onToken&&window.__isuApp.onToken(${JSONObject.quote(t)})")
+                Thread { nativeLogin(t) }.start()
             }
+        }
+    }
+
+    private fun nativeLogin(token: String) {
+        try {
+            val con = java.net.URL("$BASE/api/index.php?r=app/login").openConnection() as java.net.HttpURLConnection
+            con.requestMethod = "POST"
+            con.doOutput = true
+            con.connectTimeout = 15000
+            con.readTimeout = 20000
+            con.setRequestProperty("Content-Type", "application/json")
+            con.setRequestProperty("Accept", "application/json")
+            con.outputStream.use { it.write(JSONObject().put("t", token).toString().toByteArray()) }
+            val code = con.responseCode
+            if (code == 401) {
+                Vault.clear(this)
+                jsError("Ez a telefon már nincs engedélyezve. Lépj be jelszóval.")
+                return
+            }
+            if (code != 200) {
+                jsError("A belépés most nem sikerült (hiba: $code). Próbáld újra.")
+                return
+            }
+            val cm = CookieManager.getInstance()
+            con.headerFields.filterKeys { it != null && it.equals("Set-Cookie", true) }.values.flatten().forEach { cm.setCookie(BASE, it) }
+            cm.flush()
+            js("window.__isuApp&&window.__isuApp.onLoggedIn&&window.__isuApp.onLoggedIn()")
+        } catch (e: Exception) {
+            jsError("Nincs internet, vagy a szerver nem érhető el.")
         }
     }
 }
