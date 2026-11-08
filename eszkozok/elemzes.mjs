@@ -10,6 +10,11 @@ import dns from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+// Egy-egy hibás szerverválasz a Node beépített fetch-ében (undici) néha elkapatlan kivételt dob, ami az egész
+// mérőgépet leállítaná. Ilyenkor csak az adott oldal marad ki; a többi mérés folytatódik.
+process.on('uncaughtException', (e) => console.error('[mérés] elkapatlan hiba, az oldal kimarad:', e?.message || e));
+process.on('unhandledRejection', (e) => console.error('[mérés] elkapatlan ígéret-hiba:', e?.message || e));
+
 const run = promisify(execFile);
 const [input, outDir, shardArg = '0/1'] = process.argv.slice(2);
 const [shard, shards] = shardArg.split('/').map(Number);
