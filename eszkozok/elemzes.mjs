@@ -78,19 +78,44 @@ function sslInfo(host) {
 
 async function get(url, opts = {}) {
   try {
-    const r = await fetch(url, { redirect: opts.redirect ?? 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (IsuCode site check)' }, signal: AbortSignal.timeout(20000) });
+    const r = await fetch(url, { redirect: opts.redirect ?? 'follow', headers: { 'User-Agent': opts.browser ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' : 'Mozilla/5.0 (IsuCode site check)', 'Accept-Language': 'hu-HU,hu;q=0.9' }, signal: AbortSignal.timeout(20000) });
     return { status: r.status, url: r.url, location: r.headers.get('location'), headers: Object.fromEntries(r.headers), text: opts.body === false ? '' : await r.text() };
   } catch (e) {
     return { status: 0, error: e.cause?.code || e.message };
   }
 }
 
-function htmlChecks(html, finalUrl) {
+// A látogató számára LÁTHATÓ HTML: HTML-megjegyzések (<!-- -->), szkriptek, sablonok nélkül. Egy
+// megjegyzésbe tett vagy JavaScript-sablonban lévő link (pl. href="${url}") a böngészőben nem jelenik meg –
+// ha ezt is számolnánk, nem létező hibát írnánk le.
+function visibleHtml(html) {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style|noscript|template|textarea)[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+}
+
+// A böngésző által ténylegesen kirajzolt oldal (a JavaScript lefutása után). Ebből számoljuk a linkeket és a
+// kattintható telefonszámokat, mert sok oldal (pl. React, Vue, oldalépítők) a nyers HTML-ben mást mutat.
+async function renderedDom(url) {
+  try {
+    const { stdout } = await run(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--window-size=412,915',
+      '--virtual-time-budget=10000', '--user-agent=Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
+      '--dump-dom', url], { maxBuffer: 50 * 1024 * 1024, timeout: 60000 });
+    return stdout && stdout.length > 200 ? stdout : null;
+  } catch {
+    return null;
+  }
+}
+
+function htmlChecks(rawHtml, finalUrl, rendered) {
+  const html = rawHtml;
+  const vis = visibleHtml(rendered || rawHtml);
   const m = (re) => html.match(re)?.[1]?.trim() ?? null;
-  const count = (re) => (html.match(re) || []).length;
-  const imgs = html.match(/<img\b[^>]*>/gi) || [];
+  // a darabszámok a látható (lehetőleg kirenderelt) oldalból: ami megjegyzésben vagy szkriptben van, az nem számít
+  const count = (re) => (vis.match(re) || []).length;
+  const imgs = vis.match(/<img\b[^>]*>/gi) || [];
   const year = new Date().getFullYear();
-  const years = [...html.matchAll(/(?:©|&copy;|copyright)[^<]{0,40}?((?:19|20)\d\d)(?:\s*[-–]\s*((?:19|20)\d\d))?/gi)].map((x) => Number(x[2] || x[1]));
+  const years = [...vis.matchAll(/(?:©|&copy;|copyright)[^<]{0,40}?((?:19|20)\d\d)(?:\s*[-–]\s*((?:19|20)\d\d))?/gi)].map((x) => Number(x[2] || x[1]));
   const gen = m(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)/i) || m(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']generator/i);
   const tech = [
     /wp-content|wordpress/i.test(html) && 'WordPress', /webnode/i.test(html + finalUrl) && 'Webnode', /wix\.com|wixstatic/i.test(html) && 'Wix',
@@ -123,8 +148,9 @@ function htmlChecks(html, finalUrl) {
     cookieBanner: /cookie|süti/i.test(html),
     mixedContent: /(src|href)=["']http:\/\/(?!localhost)/i.test(html) && finalUrl.startsWith('https'),
     placeholderLinks: count(/href=["']#["']/gi),
-    lorem: /lorem ipsum/i.test(html),
-    comingSoon: /hamarosan|feltöltés alatt|fejlesztés alatt|under construction|coming soon/i.test(html),
+    lorem: /lorem ipsum/i.test(vis),
+    comingSoon: /hamarosan|feltöltés alatt|fejlesztés alatt|under construction|coming soon/i.test(pageText(vis)),
+    rendered: !!rendered,
     htmlKb: Math.round(Buffer.byteLength(html) / 1024),
   };
 }
@@ -156,7 +182,9 @@ function extractEmails(html) {
 
 function internalLinks(html, base) {
   const out = new Map();
-  for (const m of html.matchAll(/<a\b[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+  for (const m of visibleHtml(html).matchAll(/<a\b[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    // kitöltetlen sablonváltozó (${…}, {{…}}) vagy a Cloudflare e-mail-védelme: ezek a böngészőben működnek
+    if (/\$\{|\{\{|%7B|^javascript:|\/cdn-cgi\//i.test(m[1])) continue;
     try {
       const u = new URL(m[1], base);
       if (u.hostname !== new URL(base).hostname || !/^https?:$/.test(u.protocol) || /\.(jpe?g|png|gif|webp|pdf|zip)$/i.test(u.pathname)) continue;
@@ -168,8 +196,9 @@ function internalLinks(html, base) {
   return [...out].map(([url, label]) => ({ url, label }));
 }
 
-async function crawl(html, base) {
-  const links = internalLinks(html, base);
+async function crawl(html, base, rendered) {
+  // ha megvan a kirajzolt oldal, abból: így csak a látogató által tényleg látott linkek számítanak
+  const links = internalLinks(rendered || html, base);
   // A fontos aloldalak szövege (kapcsolat, szolgáltatások, árak, rólunk, referenciák), legfeljebb 4.
   const norm = (l) => l.url + ' ' + l.label.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const contactRe = /kapcsolat|elerhet|contact|impresszum|imprint|ceginfo|adatok/i;
@@ -185,12 +214,21 @@ async function crawl(html, base) {
     for (const e of extractEmails(r.text)) emails.push({ email: e, source: l.url });
   }
   // Nem működő belső linkek (legfeljebb 30 ellenőrzése).
+  // „broken” = BIZTOSAN nem létező oldal: két külön kérésre (a második rendes böngészőként, 4 mp múlva) is 404/410.
+  // Minden más (403, 429, 5xx, időtúllépés) csak „unsure”: lehet tűzfal, bejelentkezés vagy pillanatnyi hiba –
+  // ezekről a levélben nem írunk.
   const broken = [];
+  const unsure = [];
   await Promise.all(links.slice(0, 30).map(async (l) => {
     const r = await get(l.url, { body: false });
-    if (r.status === 0 || r.status >= 400) broken.push({ url: l.url, label: l.label, status: r.status || r.error });
+    if (r.status !== 0 && r.status < 400) return;
+    await new Promise((ok) => setTimeout(ok, 4000));
+    const r2 = await get(l.url, { browser: true });
+    const s1 = r.status || r.error, s2 = r2.status || r2.error;
+    if ([404, 410].includes(r.status) && [404, 410].includes(r2.status)) broken.push({ url: l.url, label: l.label, status: r2.status, checks: 2, inRenderedPage: !!rendered });
+    else if (r2.status === 0 || r2.status >= 400) unsure.push({ url: l.url, label: l.label, status: [s1, s2] });
   }));
-  return { menu: links.slice(0, 40), pages, broken, subEmails: emails };
+  return { menu: links.slice(0, 40), pages, broken, unsure, linksFrom: rendered ? 'kirajzolt oldal' : 'nyers HTML (nem ellenőrzött)', subEmails: emails };
 }
 
 async function analyze(website) {
@@ -212,17 +250,22 @@ async function analyze(website) {
   out.robotsTxt = robots.status === 200 && !/<html/i.test(robots.text || '');
   out.sitemapXml = sitemap.status === 200;
   if (page.text) {
-    out.html = htmlChecks(page.text, page.url || url);
+    const rendered = await renderedDom(page.url || url);
+    out.html = htmlChecks(page.text, page.url || url, rendered);
     out.text = pageText(page.text).slice(0, 8000);
     const found = extractEmails(page.text).map((e) => ({ email: e, source: page.url || url }));
     try {
-      const c = await crawl(page.text, page.url || url);
+      const c = await crawl(page.text, page.url || url, rendered);
       found.push(...c.subEmails);
       delete c.subEmails;
       Object.assign(out, c);
     } catch (e) {
       out.crawlError = String(e.message || e);
     }
+    // Szándékosan korlátozott elérés (pl. „telefonszámunk csak regisztrált tagjainknak”): ilyenkor a hiányt
+    // NEM írhatjuk le hibaként – a tulajdonos döntése.
+    const allText = [out.text || '', ...(out.pages || []).map((p) => p.text)].join('\n');
+    out.restrictedNotes = [...new Set((allText.match(/[^\n.!]{0,80}(csak|kizárólag)[^\n.!]{0,60}(regisztrált|bejelentkez|tag(ja|ok|jai)|előfizet)[^\n.!]{0,80}/gi) || []).map((x) => x.trim()))].slice(0, 6);
     // a weboldalon talált e-mail-címek (címenként az első forrás), és hogy a cím domainje fogad-e levelet
     const seen = new Map();
     for (const f of found) if (!seen.has(f.email)) seen.set(f.email, f.source);
