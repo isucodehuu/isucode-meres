@@ -135,6 +135,11 @@ function htmlChecks(rawHtml, finalUrl, rendered) {
     generator: gen,
     tech,
     telLinks: count(/href=["']tel:/gi),
+    // szövegként kiírt magyar telefonszámok száma a látható oldalon (ha 0, a „nem kattintható telefon” nem írható)
+    phonesVisible: [...pageText(vis).matchAll(/[+(]?\d[\d \t\-/().]{6,18}\d/g)].filter((x) => {
+      const d = x[0].replace(/\D/g, '');
+      return (/^(36|06)/.test(d) && d.length >= 10 && d.length <= 11) || (d.length === 9 && /^(20|30|31|50|70|[2-9]\d)/.test(d)) || (d.length === 8 && /^1/.test(d));
+    }).length,
     mailtoLinks: count(/href=["']mailto:/gi),
     forms: count(/<form[\s>]/gi),
     bookingWidget: /booked4|bookio|salonic|szalonom|calendly|simplybook|booksy|fresha|treatwell|idopontfoglal|időpontfoglal/i.test(html),
